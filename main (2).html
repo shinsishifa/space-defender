@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Space Defender</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: #020208;
+      color: #00f0ff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+    .game-container {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 500px;
+      padding: 10px;
+    }
+    .hud {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(10, 15, 30, 0.85);
+      border: 1px solid #00f0ff;
+      box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+      padding: 10px 16px;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+    .hud span {
+      color: #ff0055;
+      font-size: 1.1rem;
+    }
+    canvas {
+      background: radial-gradient(circle at center, #0a0a1a 0%, #000004 100%);
+      border: 2px solid #00f0ff;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+      width: 100%;
+      max-width: 500px;
+      aspect-ratio: 3 / 4;
+      display: block;
+      touch-action: none;
+    }
+    .overlay {
+      position: absolute;
+      top: 65px;
+      left: 10px;
+      right: 10px;
+      bottom: 10px;
+      background: rgba(2, 2, 8, 0.88);
+      border: 1px solid #ff0055;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      backdrop-filter: blur(4px);
+    }
+    .overlay h1 {
+      font-size: 2.2rem;
+      color: #00f0ff;
+      text-shadow: 0 0 10px #00f0ff, 0 0 20px #ff0055;
+      margin-bottom: 10px;
+    }
+    .overlay p {
+      color: #cccccc;
+      margin-bottom: 20px;
+      font-size: 0.95rem;
+      padding: 0 10px;
+    }
+    .btn {
+      background: transparent;
+      color: #ff0055;
+      border: 2px solid #ff0055;
+      padding: 12px 28px;
+      font-size: 1rem;
+      font-weight: bold;
+      letter-spacing: 1px;
+      border-radius: 30px;
+      cursor: pointer;
+      text-transform: uppercase;
+      box-shadow: 0 0 10px rgba(255, 0, 85, 0.4);
+      transition: all 0.2s ease-in-out;
+    }
+    .btn:hover {
+      background: #ff0055;
+      color: #fff;
+      box-shadow: 0 0 20px rgba(255, 0, 85, 0.8);
+      transform: scale(1.05);
+    }
+    .hidden {
+      display: none !important;
+    }
+    .instructions {
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: #606080;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="game-container">
+    <div class="hud">
+      <div>Score: <span id="scoreDisplay">0</span></div>
+      <div>Space Defender</div>
+      <div>Lives: <span id="livesDisplay">3</span></div>
+    </div>
+
+    <canvas id="gameCanvas" width="400" height="533"></canvas>
+
+    <div id="startScreen" class="overlay">
+      <h1>SPACE DEFENDER</h1>
+      <p>Destroy oncoming enemy ships before they breach your defense line!</p>
+      <button class="btn" onclick="startGame()">Launch Ship</button>
+    </div>
+
+    <div id="gameOverScreen" class="overlay hidden">
+      <h1 id="overTitle">MISSION FAILED</h1>
+      <p id="overText">Final Score: 0</p>
+      <button class="btn" onclick="startGame()">Try Again</button>
+    </div>
+
+    <div class="instructions">Move: Mouse / Touch / Left & Right Arrow Keys</div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const scoreDisplay = document.getElementById('scoreDisplay');
+    const livesDisplay = document.getElementById('livesDisplay');
+    const startScreen = document.getElementById('startScreen');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const overText = document.getElementById('overText');
+
+    let score = 0;
+    let lives = 3;
+    let gameRunning = false;
+    let animationId;
+    let frameCount = 0;
+
+    // Player Ship
+    const player = {
+      width: 32,
+      height: 32,
+      x: canvas.width / 2 - 16,
+      y: canvas.height - 50,
+      speed: 6,
+      isMovingLeft: false,
+      isMovingRight: false
+    };
+
+    let bullets = [];
+    let enemies = [];
+    let particles = [];
+
+    function drawPlayer() {
+      ctx.fillStyle = '#00f0ff';
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = '#00f0ff';
+
+      // Triangle ship body
+      ctx.beginPath();
+      ctx.moveTo(player.x + player.width / 2, player.y);
+      ctx.lineTo(player.x + player.width, player.y + player.height);
+      ctx.lineTo(player.x, player.y + player.height);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.shadowBlur = 0;
+    }
+
+    function spawnEnemy() {
+      const size = 24;
+      const x = Math.random() * (canvas.width - size);
+      const speed = 1.8 + Math.random() * 2;
+      enemies.push({ x, y: -size, size, speed });
+    }
+
+    function updateEnemies() {
+      if (frameCount % 45 === 0) {
+        spawnEnemy();
+      }
+
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        let e = enemies[i];
+        e.y += e.speed;
+
+        // Draw Enemy
+        ctx.fillStyle = '#ff0055';
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = '#ff0055';
+        ctx.fillRect(e.x, e.y, e.size, e.size);
+        ctx.shadowBlur = 0;
+
+        // Enemy breaches bottom boundary
+        if (e.y > canvas.height) {
+          enemies.splice(i, 1);
+          lives--;
+          livesDisplay.innerText = lives;
+          if (lives <= 0) endGame();
+        }
+      }
+    }
+
+    function handleBullets() {
+      if (frameCount % 10 === 0) {
+        bullets.push({
+          x: player.x + player.width / 2 - 2,
+          y: player.y,
+          width: 4,
+          height: 12,
+          speed: 8
+        });
+      }
+
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        let b = bullets[i];
+        b.y -= b.speed;
+
+        ctx.fillStyle = '#ffe600';
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = '#ffe600';
+        ctx.fillRect(b.x, b.y, b.width, b.height);
+        ctx.shadowBlur = 0;
+
+        if (b.y < -10) bullets.splice(i, 1);
+      }
+    }
+
+    function checkCollisions() {
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        let e = enemies[i];
+
+        // Player vs Enemy Collision
+        if (
+          player.x < e.x + e.size &&
+          player.x + player.width > e.x &&
+          player.y < e.y + e.size &&
+          player.y + player.height > e.y
+        ) {
+          createExplosion(e.x, e.y);
+          enemies.splice(i, 1);
+          lives--;
+          livesDisplay.innerText = lives;
+          if (lives <= 0) endGame();
+          continue;
+        }
+
+        // Bullet vs Enemy Collision
+        for (let j = bullets.length - 1; j >= 0; j--) {
+          let b = bullets[j];
+          if (
+            b.x < e.x + e.size &&
+            b.x + b.width > e.x &&
+            b.y < e.y + e.size &&
+            b.y + b.height > e.y
+          ) {
+            createExplosion(e.x, e.y);
+            enemies.splice(i, 1);
+            bullets.splice(j, 1);
+            score += 20;
+            scoreDisplay.innerText = score;
+            break;
+          }
+        }
+      }
+    }
+
+    function createExplosion(x, y) {
+      for (let i = 0; i < 8; i++) {
+        particles.push({
+          x, y,
+          dx: (Math.random() - 0.5) * 6,
+          dy: (Math.random() - 0.5) * 6,
+          life: 15
+        });
+      }
+    }
+
+    function updateParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.dx;
+        p.y += p.dy;
+        p.life--;
+
+        ctx.fillStyle = '#ff7700';
+        ctx.fillRect(p.x, p.y, 3, 3);
+
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+    }
+
+    function update() {
+      if (!gameRunning) return;
+      frameCount++;
+
+      if (player.isMovingLeft && player.x > 0) {
+        player.x -= player.speed;
+      }
+      if (player.isMovingRight && player.x < canvas.width - player.width) {
+        player.x += player.speed;
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawPlayer();
+      handleBullets();
+      updateEnemies();
+      checkCollisions();
+      updateParticles();
+    }
+
+    function gameLoop() {
+      update();
+      draw();
+      if (gameRunning) {
+        animationId = requestAnimationFrame(gameLoop);
+      }
+    }
+
+    function startGame() {
+      score = 0;
+      lives = 3;
+      frameCount = 0;
+      bullets = [];
+      enemies = [];
+      particles = [];
+
+      scoreDisplay.innerText = score;
+      livesDisplay.innerText = lives;
+      player.x = canvas.width / 2 - 16;
+      gameRunning = true;
+
+      startScreen.classList.add('hidden');
+      gameOverScreen.classList.add('hidden');
+
+      cancelAnimationFrame(animationId);
+      gameLoop();
+    }
+
+    function endGame() {
+      gameRunning = false;
+      cancelAnimationFrame(animationId);
+      overText.innerText = `Final Score: ${score}`;
+      gameOverScreen.classList.remove('hidden');
+    }
+
+    // Controls
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'd') player.isMovingRight = true;
+      if (e.key === 'ArrowLeft' || e.key === 'a') player.isMovingLeft = true;
+    });
+
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'd') player.isMovingRight = false;
+      if (e.key === 'ArrowLeft' || e.key === 'a') player.isMovingLeft = false;
+    });
+
+    function handlePointer(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const relativeX = clientX - rect.left;
+      if (relativeX > 0 && relativeX < canvas.width) {
+        player.x = relativeX - player.width / 2;
+      }
+    }
+
+    canvas.addEventListener('mousemove', handlePointer);
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      handlePointer(e);
+    }, { passive: false });
+  </script>
+</body>
+</html>
